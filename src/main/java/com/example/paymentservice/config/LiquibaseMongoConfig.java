@@ -11,8 +11,10 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.io.ResourceLoader;
+import org.springframework.data.mongodb.config.EnableMongoAuditing;
 
 @Configuration
+@EnableMongoAuditing
 @RequiredArgsConstructor
 @ConditionalOnProperty(prefix = "app.liquibase", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class LiquibaseMongoConfig {

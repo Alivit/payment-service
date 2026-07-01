@@ -5,8 +5,8 @@ databaseChangeLog:
       changes:
         - createIndex:
             collectionName: payments
-            keys: "{ order_id: 1 }"
-            options: "{ unique: true, name: 'idx_payments_order_id_unique' }"
+            keys: "{ order_id: 1, created_at: -1 }"
+            options: "{ name: 'idx_payments_order_id_created_at' }"
       rollback:
         - dropIndex:
             collectionName: payments
@@ -17,8 +17,8 @@ databaseChangeLog:
       changes:
         - createIndex:
             collectionName: payments
-            keys: "{ user_id: 1, timestamp: 1 }"
-            options: "{ name: 'idx_payments_user_id_timestamp' }"
+            keys: "{ user_id: 1, payment_status: 1, created_at: 1 }"
+            options: "{ name: 'idx_payments_user_status_date' }"
       rollback:
         - dropIndex:
             collectionName: payments
@@ -29,8 +29,8 @@ databaseChangeLog:
       changes:
         - createIndex:
             collectionName: payments
-            keys: "{ timestamp: 1 }"
-            options: "{ name: 'idx_payments_timestamp' }"
+            keys: "{ payment_status: 1, created_at: 1 }"
+            options: "{ name: 'idx_payments_status_date' }"
       rollback:
         - dropIndex:
             collectionName: payments
