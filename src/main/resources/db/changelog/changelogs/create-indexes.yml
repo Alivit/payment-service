@@ -35,6 +35,35 @@ databaseChangeLog:
         - dropIndex:
             collectionName: payments
             indexName: idx_payments_timestamp
+  - changeSet:
+      id: 6
+      author: Chuiko Vitali
+      changes:
+        - createIndex:
+            collectionName: outbox_events
+            keys: "{ status: 1, created_at: 1 }"
+            options: "{ name: 'idx_outbox_status_date' }"
+      rollback:
+        - dropIndex:
+            collectionName: outbox_events
+            indexName: idx_outbox_status_date
+  - changeSet:
+      id: 7
+      author: Chuiko Vitali
+      changes:
+        - createIndex:
+            collectionName: outbox_events
+            keys: "{ created_at: 1 }"
+            options: >-
+              { 
+                name: 'ttl_idx_outbox_cleanup', 
+                expireAfterSeconds: 259200, 
+                partialFilterExpression: { status: 'COMPLETED' } 
+              }
+      rollback:
+        - dropIndex:
+            collectionName: outbox_events
+            indexName: ttl_idx_outbox_cleanup
 
 
 

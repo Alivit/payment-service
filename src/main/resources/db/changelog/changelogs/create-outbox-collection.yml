@@ -1,0 +1,39 @@
+databaseChangeLog:
+  - changeSet:
+      id: 2
+      author: Chuiko Vitali
+      changes:
+        - createCollection:
+            collectionName: outbox_events
+            validationAction: error
+            validationLevel: strict
+            validator: |-
+              {
+                $jsonSchema: {
+                  bsonType: "object",
+                  required: ["_id", "aggregate_id", "event_type", "payload", "status", "created_at"],
+                  properties: {
+                    _id: { 
+                      bsonType: "binData"
+                    },
+                    aggregate_id: { 
+                      bsonType: "string"
+                    },
+                    event_type: { 
+                      bsonType: "string"
+                    },
+                    payload: { 
+                      bsonType: "string"
+                    },
+                    status: { 
+                      enum: ["PENDING", "COMPLETED", "FAILED"]
+                    },
+                    created_at: { 
+                      bsonType: "date"
+                    }
+                  }
+                }
+              }
+      rollback:
+        - dropCollection:
+            collectionName: outbox_events

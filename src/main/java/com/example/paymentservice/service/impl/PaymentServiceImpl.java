@@ -7,6 +7,7 @@ import com.example.paymentservice.dto.PaymentResponseDto;
 import com.example.paymentservice.dto.TotalAmountDto;
 import com.example.paymentservice.exception.ResourceNotFoundException;
 import com.example.paymentservice.mapper.PaymentMapper;
+import com.example.paymentservice.messaging.PaymentEventPublisher;
 import com.example.paymentservice.model.Payment;
 import com.example.paymentservice.model.PaymentStatus;
 import com.example.paymentservice.repository.PaymentRepository;
@@ -32,8 +33,10 @@ public class PaymentServiceImpl implements PaymentService {
     private final PaymentRepository paymentRepository;
     private final PaymentMapper paymentMapper;
     private final PaymentGatewayClient paymentGatewayClient;
+    private final PaymentEventPublisher eventPublisher;
 
     @Override
+    @Transactional
     public PaymentResponseDto create(PaymentCreateDto request) {
         Optional<Payment> lastPaymentOpt = paymentRepository.findFirstByOrderIdOrderByCreatedAtDesc(request.orderId());
         if (lastPaymentOpt.isPresent() && lastPaymentOpt.get().getPaymentStatus() == PaymentStatus.SUCCESS) {
@@ -44,7 +47,9 @@ public class PaymentServiceImpl implements PaymentService {
         newPayment = paymentRepository.save(newPayment);
         PaymentStatus finalStatus = paymentGatewayClient.processPayment(newPayment);
         newPayment.setPaymentStatus(finalStatus);
-        return paymentMapper.paymentToPaymentResponseDto(paymentRepository.save(newPayment));
+        paymentRepository.save(newPayment);
+        eventPublisher.publishPayment(newPayment);
+        return paymentMapper.paymentToPaymentResponseDto(newPayment);
     }
 
     @Override
