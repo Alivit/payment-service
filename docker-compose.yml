@@ -1,0 +1,80 @@
+services:
+  payment-mongodb:
+    image: mongo:8.0
+    container_name: payment-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${PAYMENT_DB_ROOT_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${PAYMENT_DB_ROOT_PASSWORD}
+      PAYMENT_DB_NAME: ${PAYMENT_DB_NAME}
+      PAYMENT_DB_USERNAME: ${PAYMENT_DB_USERNAME}
+      PAYMENT_DB_PASSWORD: ${PAYMENT_DB_PASSWORD}
+    volumes:
+      - ./docker-init/init-payment-user.js:/docker-entrypoint-initdb.d/init-payment-user.js:ro
+      - mongo_data:/data/db
+    command: mongod --replSet rs0
+    entrypoint:
+      - bash
+      - -c
+      - |
+        echo "thisIsASuperSecretReplicaSetKeyForLocalDevOnly1234567890" > /data/replica.key
+        chmod 400 /data/replica.key
+        chown 999:999 /data/replica.key
+        exec /usr/local/bin/docker-entrypoint.sh mongod --replSet rs0 --keyFile /data/replica.key
+    ports:
+      - "${PAYMENT_DB_EXTERNAL_PORT}:27017"
+    healthcheck:
+      test: [ "CMD", "mongosh", "-u", "${PAYMENT_DB_ROOT_USER}", "-p", "${PAYMENT_DB_ROOT_PASSWORD}", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  mongo-init:
+    image: mongo:8.0
+    container_name: payment-mongodb-init
+    depends_on:
+      payment-mongodb:
+        condition: service_healthy
+    command: >
+      mongosh --host payment-mongodb:27017 -u ${PAYMENT_DB_ROOT_USER} -p ${PAYMENT_DB_ROOT_PASSWORD} --eval 
+      'try { rs.status() } catch (e) { rs.initiate({_id:"rs0", members:[{_id:0, host:"payment-mongodb:27017"}]}) }'
+
+  kafka:
+    image: apache/kafka:3.8.0
+    container_name: payment-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,CONTROLLER://0.0.0.0:29093,EXTERNAL://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+
+  payment-service:
+    build:
+      context: .
+    container_name: payment-service
+    env_file:
+      - '.env'
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+    ports:
+      - "${PAYMENT_SERVICE_PORT}:${PAYMENT_SERVICE_PORT}"
+    depends_on:
+      payment-mongodb:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+
+networks:
+  default:
+    name: minispring-network
+
+volumes:
+  mongo_data:
