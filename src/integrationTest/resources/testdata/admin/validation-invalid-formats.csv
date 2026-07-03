@@ -1,0 +1,7 @@
+route,paramName,invalidValue
+/orders,orderId,invalid-uuid-format
+/users,userId,12345
+/status,status,UNKNOWN_STATE
+/status,status,123
+/total-sum,from,not-a-date
+/total-sum/by-user,userId,invalid-uuid

@@ -5,65 +5,69 @@ databaseChangeLog:
       changes:
         - createIndex:
             collectionName: payments
-            keys: "{ order_id: 1, created_at: -1 }"
-            options: "{ name: 'idx_payments_order_id_created_at' }"
+            keys: "{ orderId: 1 }"
+            options: >-
+              { 
+                name: 'idx_payments_orderId_unique', 
+                unique: true 
+              }
       rollback:
         - dropIndex:
             collectionName: payments
-            indexName: idx_payments_order_id_unique
+            indexName: idx_payments_orderId_unique
   - changeSet:
       id: 4
       author: Chuiko Vitali
       changes:
         - createIndex:
             collectionName: payments
-            keys: "{ user_id: 1, payment_status: 1, created_at: 1 }"
-            options: "{ name: 'idx_payments_user_status_date' }"
+            keys: "{ userId: 1, paymentStatus: 1, createdAt: 1 }"
+            options: "{ name: 'idx_payments_userId_status_date' }"
       rollback:
         - dropIndex:
             collectionName: payments
-            indexName: idx_payments_user_id_timestamp
+            indexName: idx_payments_userId_status_date
   - changeSet:
       id: 5
       author: Chuiko Vitali
       changes:
         - createIndex:
             collectionName: payments
-            keys: "{ payment_status: 1, created_at: 1 }"
+            keys: "{ paymentStatus: 1, createdAt: 1 }"
             options: "{ name: 'idx_payments_status_date' }"
       rollback:
         - dropIndex:
             collectionName: payments
-            indexName: idx_payments_timestamp
+            indexName: idx_payments_status_date
   - changeSet:
       id: 6
       author: Chuiko Vitali
       changes:
         - createIndex:
-            collectionName: outbox_events
-            keys: "{ status: 1, created_at: 1 }"
-            options: "{ name: 'idx_outbox_status_date' }"
+            collectionName: outboxEvents
+            keys: "{ status: 1, createdAt: 1 }"
+            options: "{ name: 'idx_outboxEvents_status_date' }"
       rollback:
         - dropIndex:
-            collectionName: outbox_events
-            indexName: idx_outbox_status_date
+            collectionName: outboxEvents
+            indexName: idx_outboxEvents_status_date
   - changeSet:
       id: 7
       author: Chuiko Vitali
       changes:
         - createIndex:
-            collectionName: outbox_events
-            keys: "{ created_at: 1 }"
+            collectionName: outboxEvents
+            keys: "{ createdAt: 1 }"
             options: >-
               { 
-                name: 'ttl_idx_outbox_cleanup', 
+                name: 'ttl_idx_outboxEvents_cleanup', 
                 expireAfterSeconds: 259200, 
                 partialFilterExpression: { status: 'COMPLETED' } 
               }
       rollback:
         - dropIndex:
-            collectionName: outbox_events
-            indexName: ttl_idx_outbox_cleanup
+            collectionName: outboxEvents
+            indexName: ttl_idx_outboxEvents_cleanup
 
 
 

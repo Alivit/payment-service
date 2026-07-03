@@ -1,16 +1,52 @@
 spring:
-  profiles:
-    active: local
   application:
-     name: payment-service
+    name: payment-service
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
   threads:
     virtual:
       enabled: true
+  data:
+    web:
+      pageable:
+        serialization-mode: via_dto
   kafka:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: com.minispring.paymentservice.messaging.kafka.serializer.JacksonKafkaSerializer
       acks: all
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: always
+  info:
+    env:
+      enabled: true
+
+logbook:
+  format:
+    style: json
+  strategy: default
+  obfuscate:
+    parameters:
+      - password
+      - secret
+      - token
+      - cvv
+      - cardNumber
+  predicate:
+    exclude:
+      - path: /actuator/**
+      - path: /swagger-ui/**
+      - path: /v3/api-docs/**
+
 app:
   liquibase:
     enabled: true
@@ -18,3 +54,8 @@ app:
   kafka:
     topics:
       payment-events: "payment-events"
+  external-api:
+    url: ${EXTERNAL_API_URL:https://www.random.org}
+  grpc:
+    timeout:
+      seconds: 5

@@ -1,0 +1,5 @@
+route,missingParam
+/orders,orderId
+/users,userId
+/status,status
+/total-sum/by-user,userId

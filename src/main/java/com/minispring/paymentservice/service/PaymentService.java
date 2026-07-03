@@ -1,31 +1,29 @@
 package com.minispring.paymentservice.service;
 
-import com.minispring.paymentservice.dto.PaymentCreateDto;
-import com.minispring.paymentservice.dto.PaymentFilterRequestDto;
-import com.minispring.paymentservice.dto.PaymentResponseDto;
-import com.minispring.paymentservice.dto.TotalAmountDto;
+import com.minispring.paymentservice.dto.request.PaymentProcessRequest;
+import com.minispring.paymentservice.dto.request.PaymentSearchCriteria;
+import com.minispring.paymentservice.dto.response.PaymentTotalSum;
+import com.minispring.paymentservice.dto.response.PaymentView;
 import com.minispring.paymentservice.model.PaymentStatus;
+import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
-import java.util.List;
-import java.util.UUID;
-
 public interface PaymentService {
 
-    PaymentResponseDto create(PaymentCreateDto request);
+    PaymentView create(UUID userId, PaymentProcessRequest request);
 
-    List<PaymentResponseDto> getByOrderId(UUID orderId, boolean desc);
+    PaymentView getByOrderId(UUID orderId);
 
-    List<PaymentResponseDto> getByOrderIdAndUserId(UUID orderId, UUID userId, boolean desc);
+    PaymentView getByOrderIdAndUserId(UUID orderId, UUID userId);
 
-    Page<PaymentResponseDto> getByUserId(UUID userId, Pageable pageable);
+    Page<PaymentView> getByUserId(UUID userId, Pageable pageable);
 
-    Page<PaymentResponseDto> getByStatus(PaymentStatus status, Pageable pageable);
+    Page<PaymentView> getByStatus(PaymentStatus status, Pageable pageable);
 
-    Page<PaymentResponseDto> getByUserIdAndStatus(UUID userId, PaymentStatus status, Pageable pageable);
+    Page<PaymentView> getByUserIdAndStatus(UUID userId, PaymentStatus status, Pageable pageable);
 
-    TotalAmountDto getTotalAmountByUserId(UUID userId, PaymentFilterRequestDto request);
+    PaymentTotalSum getTotalSumByUserId(UUID userId, PaymentSearchCriteria request);
 
-    TotalAmountDto getTotalAmount(PaymentFilterRequestDto request);
+    PaymentTotalSum getTotalSum(PaymentSearchCriteria request);
 }

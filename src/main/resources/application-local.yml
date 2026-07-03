@@ -1,21 +1,30 @@
 spring:
   mongodb:
-    uri: ${PAYMENT_DB_LOCAL_URL:mongodb://localhost:27017/payments_db}
+    uri: mongodb://${PAYMENT_DB_USERNAME}:${PAYMENT_DB_PASSWORD}@localhost:${MONGO_PORT}/${PAYMENT_DB_NAME}?authSource=${PAYMENT_DB_NAME}
     representation:
       uuid: standard
   kafka:
-    bootstrap-servers: 'localhost:9092'
+    bootstrap-servers: localhost:${KAFKA_PORT}
   security:
     oauth2:
       resourceserver:
         jwt:
-          jwk-set-uri: ${APP_JWK_SET_URI_LOCAL:http://localhost:9000/realms/dev/protocol/openid-connect/certs}
-          issuer-uri: ${APP_ISSUER_URI_LOCAL:http://localhost:9000/realms/dev}
-          audience: ${APP_CLIENT_ID:account}
+          jwk-set-uri: https://localhost:${KC_HTTPS_PORT}/realms/${APP_REALM}/protocol/openid-connect/certs
+          issuer-uri: https://localhost:${KC_HTTPS_PORT}/realms/${APP_REALM}
+          audience: ${APP_CLIENT_ID}
+  grpc:
+    client:
+      channels:
+        order-service-grpc:
+          address: 'localhost:${ORDER_GRPC_SERVER_PORT}'
+          negotiation-type: plaintext
+
+app:
+  liquibase:
+    uri: ${spring.mongodb.uri}
+
 logging:
   level:
     root: INFO
-    org.springframework.data.mongodb.core.MongoTemplate: INFO
-app:
-  liquibase:
-    uri: ${PAYMENT_DB_LOCAL_URL:mongodb://localhost:27017/payments_db}
+    com.minispring.paymentservice: DEBUG
+    org.springframework.data.mongodb.core.MongoTemplate: DEBUG

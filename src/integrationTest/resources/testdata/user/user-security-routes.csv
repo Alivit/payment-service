@@ -1,0 +1,6 @@
+method,route
+POST,/
+GET,/
+GET,/status?status=SUCCESS
+GET,/orders?orderId=00000000-0000-0000-0000-000000000000
+GET,/total-sum?from=2026-01-01T00:00:00Z&to=2026-12-31T23:59:59Z
