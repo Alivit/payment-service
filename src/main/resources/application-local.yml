@@ -1,6 +1,6 @@
 spring:
   mongodb:
-    uri: ${PAYMENT_DB_LOCAL_URL}
+    uri: ${PAYMENT_DB_LOCAL_URL:mongodb://localhost:27017/payments_db}
     representation:
       uuid: standard
   kafka:
@@ -9,13 +9,13 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          jwk-set-uri: ${APP_JWK_SET_URI_LOCAL}
-          issuer-uri: ${APP_ISSUER_URI_LOCAL}
-          audience: ${APP_CLIENT_ID}
+          jwk-set-uri: ${APP_JWK_SET_URI_LOCAL:http://localhost:9000/realms/dev/protocol/openid-connect/certs}
+          issuer-uri: ${APP_ISSUER_URI_LOCAL:http://localhost:9000/realms/dev}
+          audience: ${APP_CLIENT_ID:account}
 logging:
   level:
     root: INFO
     org.springframework.data.mongodb.core.MongoTemplate: INFO
 app:
   liquibase:
-    uri: ${PAYMENT_DB_LOCAL_URL}
+    uri: ${PAYMENT_DB_LOCAL_URL:mongodb://localhost:27017/payments_db}
