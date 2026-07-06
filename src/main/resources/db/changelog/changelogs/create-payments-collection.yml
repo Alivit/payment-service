@@ -1,6 +1,6 @@
 databaseChangeLog:
   - changeSet:
-      id: 2
+      id: 1
       author: Chuiko Vitali
       changes:
         - createCollection:
@@ -11,13 +11,34 @@ databaseChangeLog:
               {
                 $jsonSchema: {
                   bsonType: "object",
-                  required: ["order_id", "user_id", "status", "timestamp", "payment_amount"],
+                  required: ["_id", "order_id", "user_id", "payment_status", "created_at", "payment_amount"],
                   properties: {
-                    order_id: { bsonType: "string", description: "Must be a string and is required" },
-                    user_id: { bsonType: "string", description: "Must be a string and is required" },
-                    status: { enum: ["PENDING", "SUCCESS", "FAILED", "REJECTED"], description: "Strict state loop" },
-                    timestamp: { bsonType: "date", description: "Must be a date and is required" },
-                    payment_amount: { bsonType: "decimal", description: "High-precision monetary decimal value" }
+                    _id: { 
+                      bsonType: "binData", 
+                      description: "Primary key, must be a UUID" 
+                    },
+                    order_id: { 
+                      bsonType: "binData", 
+                      description: "Must be a UUID and is required" 
+                    },
+                    user_id: { 
+                      bsonType: "binData", 
+                      description: "Must be a UUID and is required" 
+                    },
+                    payment_status: { 
+                      enum: ["PENDING", "SUCCESS", "FAILED", "REJECTED"], 
+                      description: "Strict state loop matching Java Enum" 
+                    },
+                    created_at: { 
+                      bsonType: "date"
+                    },
+                    payment_amount: { 
+                      bsonType: "decimal", 
+                      description: "High-precision monetary decimal value" 
+                    }
                   }
                 }
               }
+      rollback:
+        - dropCollection:
+            collectionName: payments

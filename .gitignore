@@ -20,6 +20,7 @@ bin/
 ### IntelliJ IDEA ###
 .idea
 *.iws
+*.env
 *.iml
 *.ipr
 out/
