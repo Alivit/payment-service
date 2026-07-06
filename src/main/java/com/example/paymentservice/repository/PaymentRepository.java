@@ -22,9 +22,15 @@ public interface PaymentRepository extends MongoRepository<Payment, UUID> {
 
     Page<Payment> findByPaymentStatus(PaymentStatus paymentStatus, Pageable pageable);
 
+    Page<Payment> findByUserIdAndPaymentStatus(UUID userId, PaymentStatus paymentStatus, Pageable pageable);
+
     Optional<Payment> findFirstByOrderIdOrderByCreatedAtDesc(UUID orderId);
 
     List<Payment> findByOrderId(UUID orderId, Sort sort);
+
+    List<Payment> findByOrderIdAndUserId(UUID orderId, UUID userId, Sort sort);
+
+    boolean existsByOrderIdAndUserIdNot(UUID orderId, UUID userId);
 
     @Aggregation(pipeline = {
             "{ '$match': { 'user_id': ?0, 'created_at': { '$gte': ?#{#filter.from}, '$lte': ?#{#filter.to} }, 'payment_status': 'SUCCESS' } }",

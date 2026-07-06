@@ -15,13 +15,15 @@ public interface PaymentService {
 
     PaymentResponseDto create(PaymentCreateDto request);
 
-    PaymentResponseDto getLastByOrderId(UUID orderId);
-
     List<PaymentResponseDto> getByOrderId(UUID orderId, boolean desc);
+
+    List<PaymentResponseDto> getByOrderIdAndUserId(UUID orderId, UUID userId, boolean desc);
 
     Page<PaymentResponseDto> getByUserId(UUID userId, Pageable pageable);
 
     Page<PaymentResponseDto> getByStatus(PaymentStatus status, Pageable pageable);
+
+    Page<PaymentResponseDto> getByUserIdAndStatus(UUID userId, PaymentStatus status, Pageable pageable);
 
     TotalAmountDto getTotalAmountByUserId(UUID userId, PaymentFilterRequestDto request);
 
