@@ -1,0 +1,22 @@
+spring:
+  mongodb:
+    uri: mongodb://${PAYMENT_DB_USERNAME}:${PAYMENT_DB_PASSWORD}@payment-mongodb:27017/${PAYMENT_DB_NAME}?replicaSet=rs0&uuidRepresentation=standard&authSource=${PAYMENT_DB_NAME}
+
+  kafka:
+    bootstrap-servers: kafka:29092
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${APP_JWK_SET_URI_DOCKER}
+          issuer-uri: ${APP_ISSUER_URI_DOCKER}
+          audience: account
+
+app:
+  liquibase:
+    uri: mongodb://${PAYMENT_DB_USERNAME}:${PAYMENT_DB_PASSWORD}@payment-mongodb:27017/${PAYMENT_DB_NAME}?replicaSet=rs0&uuidRepresentation=standard&authSource=${PAYMENT_DB_NAME}
+
+logging:
+  level:
+    root: INFO
