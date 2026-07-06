@@ -1,0 +1,5 @@
+databaseChangeLog:
+  - include:
+      file: db/changelog/changelogs/create-payments-collection.yml
+  - include:
+      file: db/changelog/changelogs/create-indexes.yml

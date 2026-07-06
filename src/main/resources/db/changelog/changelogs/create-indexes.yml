@@ -1,0 +1,40 @@
+databaseChangeLog:
+  - changeSet:
+      id: 3
+      author: Chuiko Vitali
+      changes:
+        - createIndex:
+            collectionName: payments
+            keys: "{ order_id: 1 }"
+            options: "{ unique: true, name: 'idx_payments_order_id_unique' }"
+      rollback:
+        - dropIndex:
+            collectionName: payments
+            indexName: idx_payments_order_id_unique
+  - changeSet:
+      id: 4
+      author: Chuiko Vitali
+      changes:
+        - createIndex:
+            collectionName: payments
+            keys: "{ user_id: 1, timestamp: 1 }"
+            options: "{ name: 'idx_payments_user_id_timestamp' }"
+      rollback:
+        - dropIndex:
+            collectionName: payments
+            indexName: idx_payments_user_id_timestamp
+  - changeSet:
+      id: 5
+      author: Chuiko Vitali
+      changes:
+        - createIndex:
+            collectionName: payments
+            keys: "{ timestamp: 1 }"
+            options: "{ name: 'idx_payments_timestamp' }"
+      rollback:
+        - dropIndex:
+            collectionName: payments
+            indexName: idx_payments_timestamp
+
+
+
