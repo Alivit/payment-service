@@ -1,0 +1,38 @@
+spring:
+  main:
+    allow-bean-definition-overriding: true
+  mongodb:
+    database: payment_test_db
+    representation:
+      uuid: standard
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: "http://localhost:9999/dummy"
+          issuer-uri: "http://localhost:9999/dummy"
+          audience: "account"
+  kafka:
+    consumer:
+      auto-offset-reset: earliest
+      group-id: payment-test-group
+    producer:
+      retries: 0
+      batch-size: 0
+  cache:
+    type: none
+
+logging:
+  level:
+    org.springframework: WARN
+    org.springframework.data.mongodb.core.MongoTemplate: DEBUG
+    org.testcontainers: INFO
+    com.innowise.paymentservice: DEBUG
+server:
+  port: 0
+app:
+  liquibase:
+    enabled: true
+    change-log: db/changelog/changelog.yml
+  order-service:
+    url: http://localhost:9999

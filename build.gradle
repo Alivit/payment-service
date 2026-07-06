@@ -2,6 +2,7 @@ plugins {
     id 'java'
     id 'org.springframework.boot' version '4.0.6'
     id 'io.spring.dependency-management' version '1.1.7'
+    id 'jvm-test-suite'
 }
 
 group = 'com.example'
@@ -26,6 +27,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-kafka'
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
+    implementation 'me.paulschwarz:spring-dotenv:5.1.0'
     implementation 'com.github.ben-manes.caffeine:caffeine:3.2.4'
     implementation 'org.springframework.boot:spring-boot-starter-cache'
     implementation 'org.liquibase:liquibase-core:5.0.3'
@@ -34,14 +36,55 @@ dependencies {
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
     annotationProcessor 'org.mapstruct:mapstruct-processor:1.6.3'
+    implementation platform('org.instancio:instancio-bom:6.0.0-RC3')
+    testImplementation 'org.instancio:instancio-core'
+    testImplementation 'org.instancio:instancio-junit'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-mongodb-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-validation-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+    testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+    testImplementation 'org.springframework.security:spring-security-test'
+    testImplementation 'org.wiremock:wiremock-standalone:3.13.2'
+    testImplementation 'org.testcontainers:junit-jupiter:1.21.4'
+    testImplementation 'org.testcontainers:mongodb:1.21.4'
+    testImplementation 'org.testcontainers:kafka:1.21.4'
     testCompileOnly 'org.projectlombok:lombok'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     testAnnotationProcessor 'org.projectlombok:lombok'
 }
 
-tasks.named('test') {
-    useJUnitPlatform()
+testing {
+    suites {
+        test(JvmTestSuite) {
+            useJUnitJupiter()
+        }
+
+        integrationTest(JvmTestSuite) {
+            dependencies {
+                implementation project()
+            }
+            targets {
+                configureEach {
+                    testTask.configure {
+                        shouldRunAfter(test)
+                        systemProperty "spring.profiles.active", "test"
+                        minHeapSize = "512m"
+                        maxHeapSize = "2048m"
+                    }
+                }
+            }
+        }
+    }
+}
+
+configurations {
+    integrationTestImplementation.extendsFrom testImplementation
+    integrationTestRuntimeOnly.extendsFrom testRuntimeOnly
+    integrationTestCompileOnly.extendsFrom testCompileOnly
+    integrationTestAnnotationProcessor.extendsFrom testAnnotationProcessor
+}
+
+tasks.named('check') {
+    dependsOn testing.suites.integrationTest
 }
