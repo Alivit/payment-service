@@ -32,7 +32,4 @@ server:
   port: 0
 app:
   liquibase:
-    enabled: true
     change-log: db/changelog/changelog.yml
-  order-service:
-    url: http://localhost:9999

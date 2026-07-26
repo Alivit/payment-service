@@ -9,8 +9,7 @@ RUN --mount=type=cache,target=/home/gradle/.gradle/caches,sharing=locked \
 
 COPY src ./src
 RUN --mount=type=cache,target=/home/gradle/.gradle/caches,sharing=locked \
-    gradle clean bootJar --no-daemon -x test \
-    && find build/libs/ -name "*.jar" ! -name "*plain.jar" -exec mv {} build/libs/app.jar \;
+    gradle bootJar --no-daemon -x test
 
 FROM eclipse-temurin:25-jre AS extractor
 WORKDIR /app

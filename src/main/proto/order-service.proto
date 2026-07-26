@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package com.minispring.grpc.order;
+
+option java_multiple_files = true;
+option java_package = "com.minispring.grpc.order";
+option java_outer_classname = "OrderProto";
+
+service OrderGrpcService {
+  rpc getOrderPriceById (GetOrderPriceByIdRequest) returns (GetOrderPriceByIdResponse);
+}
+
+message GetOrderPriceByIdRequest {
+  string order_id = 1;
+}
+
+message GetOrderPriceByIdResponse {
+  OrderPriceDto order_price = 1;
+}
+
+message OrderPriceDto {
+  string order_id = 1;
+  string user_id = 2;
+  string total_price = 3;
+}

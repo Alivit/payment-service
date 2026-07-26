@@ -1,16 +1,17 @@
 package com.minispring.paymentservice.model;
 
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.UUID;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.annotation.Version;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 import org.springframework.data.mongodb.core.mapping.FieldType;
-
-import java.math.BigDecimal;
-import java.time.Instant;
-import java.util.UUID;
 
 @Getter
 @Setter
@@ -18,21 +19,21 @@ import java.util.UUID;
 public class Payment {
 
     @Id
-    UUID id = UUID.randomUUID();
+    private UUID id = UUID.randomUUID();
 
-    @Field("order_id")
-    UUID orderId;
+    @Field(targetType = FieldType.DECIMAL128)
+    private BigDecimal paymentAmount;
 
-    @Field("user_id")
-    UUID userId;
-
-    @Field(name = "payment_amount", targetType = FieldType.DECIMAL128)
-    BigDecimal paymentAmount;
-
-    @Field("payment_status")
-    PaymentStatus paymentStatus;
+    private PaymentStatus paymentStatus;
+    private UUID orderId;
+    private UUID userId;
 
     @CreatedDate
-    @Field("created_at")
-    Instant createdAt;
+    private Instant createdAt;
+
+    @LastModifiedDate
+    private Instant updatedAt;
+
+    @Version
+    private Long version;
 }

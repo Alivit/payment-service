@@ -1,35 +1,29 @@
 package com.minispring.paymentservice.model;
 
+import java.time.Instant;
+import java.util.Map;
+import java.util.UUID;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
-import org.springframework.data.mongodb.core.mapping.Field;
-
-import java.time.Instant;
-import java.util.UUID;
-
 
 @Getter
 @Setter
 @Builder
-@Document(collection = "outbox_events")
+@Document(collection = "outboxEvents")
 public class OutboxEvent {
 
     @Id
     private UUID id;
 
-    @Field("aggregate_id")
     private String aggregateId;
-
-    @Field("event_type")
     private String eventType;
-    private String payload;
+    private Map<String, Object> payload;
     private OutboxStatus status;
 
     @CreatedDate
-    @Field("created_at")
     private Instant createdAt;
 }

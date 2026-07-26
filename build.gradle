@@ -3,6 +3,12 @@ plugins {
     id 'org.springframework.boot' version '4.0.6'
     id 'io.spring.dependency-management' version '1.1.7'
     id 'jvm-test-suite'
+    id 'jacoco'
+    id 'com.google.protobuf' version "0.10.0"
+    id 'org.sonarqube' version '7.3.1.8318'
+    id 'com.adarshr.test-logger' version '4.0.0'
+    id 'com.diffplug.spotless' version '8.8.0'
+    id 'com.autonomousapps.dependency-analysis' version '3.16.0'
 }
 
 group = 'com.example'
@@ -15,27 +21,41 @@ java {
     }
 }
 
+bootJar {
+    archiveFileName = 'app.jar'
+}
+
 repositories {
     mavenCentral()
 }
 
 dependencies {
-    implementation 'org.springframework.boot:spring-boot-starter-mongodb'
     implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-kafka'
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
+    implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
+    implementation 'org.springframework.grpc:spring-grpc-spring-boot-starter:1.0.3'
+    implementation 'com.google.protobuf:protobuf-java:4.35.0'
+    implementation 'com.google.protobuf:protobuf-java-util:4.35.0'
+    implementation 'org.springframework.retry:spring-retry:2.0.13'
+    implementation 'io.github.resilience4j:resilience4j-spring-boot4:2.4.0'
+    implementation 'io.github.resilience4j:resilience4j-micrometer:2.4.0'
     implementation 'me.paulschwarz:spring-dotenv:5.1.0'
     implementation 'com.github.ben-manes.caffeine:caffeine:3.2.4'
+    implementation 'org.zalando:logbook-spring-boot-starter:4.0.4'
+    implementation 'org.zalando:logbook-json:4.0.4'
     implementation 'org.springframework.boot:spring-boot-starter-cache'
     implementation 'org.liquibase:liquibase-core:5.0.3'
-    implementation 'org.liquibase.ext:liquibase-mongodb:5.0.3'
     implementation 'org.mapstruct:mapstruct:1.6.3'
     compileOnly 'org.projectlombok:lombok'
+    runtimeOnly 'org.liquibase.ext:liquibase-mongodb:5.0.3'
     annotationProcessor 'org.projectlombok:lombok'
     annotationProcessor 'org.mapstruct:mapstruct-processor:1.6.3'
+    annotationProcessor 'org.projectlombok:lombok-mapstruct-binding:0.2.0'
     implementation platform('org.instancio:instancio-bom:6.0.0-RC3')
     testImplementation 'org.instancio:instancio-core'
     testImplementation 'org.instancio:instancio-junit'
@@ -87,4 +107,102 @@ configurations {
 
 tasks.named('check') {
     dependsOn testing.suites.integrationTest
+}
+
+jacoco {
+    toolVersion = "0.8.15"
+}
+
+tasks.named('jacocoTestReport') {
+    dependsOn tasks.named('test'), tasks.named('integrationTest')
+
+    reports {
+        xml.required = true
+        html.required = true
+    }
+
+    executionData.setFrom(fileTree(layout.buildDirectory).include("/jacoco/*.exec"))
+
+    classDirectories.setFrom(
+            files(classDirectories.files.collect {
+                fileTree(dir: it, exclude: [
+                        "**/dto/**",
+                        "**/config/**",
+                        "**/mapper/**",
+                        "**/exception/**",
+                        "**/*Application.class"
+                ])
+            })
+    )
+}
+
+sonar {
+    properties {
+        property "sonar.projectName", "Payment Service"
+        property "sonar.host.url", System.getenv("SONAR_HOST_URL")
+        property "sonar.token", System.getenv("SONAR_TOKEN")
+        property "sonar.organization", System.getenv("SONAR_ORGANIZATION")
+        property "sonar.projectKey", System.getenv("SONAR_PROJECT_KEY")
+        property "sonar.coverage.jacoco.xmlReportPaths", "${layout.buildDirectory.get()}/reports/jacoco/test/jacocoTestReport.xml"
+        property "sonar.junit.reportPaths", "${layout.buildDirectory.get()}/test-results/test,${layout.buildDirectory.get()}/test-results/integrationTest"
+        property "sonar.coverage.exclusions", "**/dto/**, **/config/**, **/mapper/**, **/exception/**, **/*Application.java"
+        property "sonar.qualitygate.wait", "true"
+    }
+}
+
+dependencyAnalysis {
+    issues {
+        all {
+            onAny {
+                severity("warn")
+            }
+            onUnusedDependencies {
+                exclude("org.springframework.boot:spring-boot-starter-*")
+                exclude("org.projectlombok:lombok")
+                exclude("org.mapstruct:*")
+                exclude("me.paulschwarz:spring-dotenv")
+            }
+        }
+    }
+}
+
+spotless {
+    java {
+        palantirJavaFormat()
+
+        removeUnusedImports()
+
+        trimTrailingWhitespace()
+        endWithNewline()
+    }
+}
+
+testlogger {
+    theme = 'mocha'
+
+    showStandardStreams = false
+    showPassedStandardStreams = false
+    showFailedStandardStreams = true
+
+    slowThreshold = 2000
+
+    showSummary = true
+}
+
+protobuf {
+    protoc {
+        artifact = "com.google.protobuf:protoc:4.35.0"
+    }
+    plugins {
+        grpc {
+            artifact = "io.grpc:protoc-gen-grpc-java:1.81.0"
+        }
+    }
+    generateProtoTasks {
+        all().each { task ->
+            task.plugins {
+                grpc {}
+            }
+        }
+    }
 }

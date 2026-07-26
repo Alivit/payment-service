@@ -4,31 +4,31 @@ databaseChangeLog:
       author: Chuiko Vitali
       changes:
         - createCollection:
-            collectionName: outbox_events
+            collectionName: outboxEvents
             validationAction: error
             validationLevel: strict
             validator: |-
               {
                 $jsonSchema: {
                   bsonType: "object",
-                  required: ["_id", "aggregate_id", "event_type", "payload", "status", "created_at"],
+                  required: ["_id", "aggregateId", "eventType", "payload", "status", "createdAt"],
                   properties: {
                     _id: { 
                       bsonType: "binData"
                     },
-                    aggregate_id: { 
+                    aggregateId: { 
                       bsonType: "string"
                     },
-                    event_type: { 
+                    eventType: { 
                       bsonType: "string"
                     },
                     payload: { 
-                      bsonType: "string"
+                      bsonType: "object"
                     },
                     status: { 
                       enum: ["PENDING", "COMPLETED", "FAILED"]
                     },
-                    created_at: { 
+                    createdAt: { 
                       bsonType: "date"
                     }
                   }
@@ -36,4 +36,4 @@ databaseChangeLog:
               }
       rollback:
         - dropCollection:
-            collectionName: outbox_events
+            collectionName: outboxEvents

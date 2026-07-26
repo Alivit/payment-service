@@ -14,3 +14,4 @@ db.createUser({
         }
     ]
 });
+print(`User ${dbUser} created successfully for database ${targetDbName}`);

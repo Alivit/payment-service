@@ -11,31 +11,38 @@ databaseChangeLog:
               {
                 $jsonSchema: {
                   bsonType: "object",
-                  required: ["_id", "order_id", "user_id", "payment_status", "created_at", "payment_amount"],
+                  required: ["_id", "orderId", "userId", "paymentStatus", "createdAt", "paymentAmount", "currency"],
                   properties: {
                     _id: { 
                       bsonType: "binData", 
                       description: "Primary key, must be a UUID" 
                     },
-                    order_id: { 
+                    orderId: { 
                       bsonType: "binData", 
                       description: "Must be a UUID and is required" 
                     },
-                    user_id: { 
+                    userId: { 
                       bsonType: "binData", 
                       description: "Must be a UUID and is required" 
                     },
-                    payment_status: { 
+                    paymentStatus: { 
                       enum: ["PENDING", "SUCCESS", "FAILED", "REJECTED"], 
                       description: "Strict state loop matching Java Enum" 
                     },
-                    created_at: { 
+                    createdAt: { 
                       bsonType: "date"
                     },
-                    payment_amount: { 
+                    updatedAt: {
+                      bsonType: "date",
+                      description: "Timestamp of the last status update"
+                    },
+                    paymentAmount: { 
                       bsonType: "decimal", 
                       description: "High-precision monetary decimal value" 
-                    }
+                    },
+                    version: {
+                      bsonType: "long"
+                    },
                   }
                 }
               }

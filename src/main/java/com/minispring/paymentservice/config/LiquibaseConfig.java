@@ -3,17 +3,16 @@ package com.minispring.paymentservice.config;
 import jakarta.annotation.PostConstruct;
 import liquibase.Scope;
 import liquibase.command.CommandScope;
-import liquibase.exception.CommandExecutionException;
 import liquibase.integration.spring.SpringResourceAccessor;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.io.ResourceLoader;
-import org.springframework.data.mongodb.config.EnableMongoAuditing;
 
+@Slf4j
 @Configuration
-@EnableMongoAuditing
 @RequiredArgsConstructor
 @ConditionalOnProperty(prefix = "app.liquibase", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class LiquibaseConfig {
@@ -24,15 +23,14 @@ public class LiquibaseConfig {
     @Value("${app.liquibase.change-log}")
     private String changeLogPath;
 
-    private final ResourceLoader resourceLoader;
+    private final ApplicationContext applicationContext;
 
     @PostConstruct
-    public void runMigration() throws Exception {
-        System.out.println("Starting Liquibase NoSQL Management Core...");
+    public void runMigration() {
+        log.info("Starting Liquibase NoSQL Management Core...");
 
-        SpringResourceAccessor resourceAccessor = new SpringResourceAccessor(resourceLoader);
+        try (SpringResourceAccessor resourceAccessor = new SpringResourceAccessor(applicationContext)) {
 
-        try {
             Scope.child(Scope.Attr.resourceAccessor, resourceAccessor, () -> {
                 CommandScope updateCommand = new CommandScope("update");
 
@@ -41,11 +39,12 @@ public class LiquibaseConfig {
 
                 updateCommand.execute();
             });
-            System.out.println("Liquibase: Update command executed successfully. Database is up to date.");
 
-        } catch (CommandExecutionException e) {
-            System.err.println("Liquibase: Update command failed execution: " + e.getMessage());
-            throw e;
+            log.info("Liquibase: Update command executed successfully. MongoDB schema is up to date.");
+
+        } catch (Exception e) {
+            log.error("Liquibase: Fatal error during MongoDB schema update. Reason: {}", e.getMessage(), e);
+            throw new IllegalStateException("Failed to execute Liquibase migrations for MongoDB", e);
         }
     }
 }

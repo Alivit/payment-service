@@ -1,15 +1,33 @@
 package com.minispring.paymentservice.service.impl;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.instancio.Select.field;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+
+import com.minispring.paymentservice.client.OrderGrpcClient;
 import com.minispring.paymentservice.client.PaymentGatewayClient;
-import com.minispring.paymentservice.dto.PaymentCreateDto;
-import com.minispring.paymentservice.dto.PaymentFilterRequestDto;
-import com.minispring.paymentservice.dto.PaymentResponseDto;
-import com.minispring.paymentservice.dto.TotalAmountDto;
+import com.minispring.paymentservice.dto.request.PaymentProcessRequest;
+import com.minispring.paymentservice.dto.request.PaymentSearchCriteria;
+import com.minispring.paymentservice.dto.response.OrderView;
+import com.minispring.paymentservice.dto.response.PaymentTotalSum;
+import com.minispring.paymentservice.dto.response.PaymentView;
+import com.minispring.paymentservice.exception.ResourceNotFoundException;
 import com.minispring.paymentservice.mapper.PaymentMapper;
 import com.minispring.paymentservice.messaging.PaymentEventPublisher;
 import com.minispring.paymentservice.model.Payment;
 import com.minispring.paymentservice.model.PaymentStatus;
 import com.minispring.paymentservice.repository.PaymentRepository;
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 import org.instancio.Instancio;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -18,28 +36,15 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
-
-import java.math.BigDecimal;
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 
 @ExtendWith(MockitoExtension.class)
 class PaymentServiceImplTest {
@@ -59,107 +64,173 @@ class PaymentServiceImplTest {
     @Mock
     private TransactionTemplate transactionTemplate;
 
+    @Mock
+    private OrderGrpcClient orderGrpcClient;
+
     @InjectMocks
     private PaymentServiceImpl paymentService;
 
     @Nested
     class CreateTest {
-
-        private PaymentCreateDto createDto;
-        private Payment payment;
-        private PaymentResponseDto expectedDto;
+        private PaymentProcessRequest createDto;
+        private UUID userId;
+        private Payment paymentToProcess;
+        private PaymentView expectedDto;
 
         @BeforeEach
         void init() {
-            createDto = Instancio.create(PaymentCreateDto.class);
-            payment = Instancio.create(Payment.class);
-            expectedDto = Instancio.create(PaymentResponseDto.class);
+            createDto = Instancio.create(PaymentProcessRequest.class);
+            userId = UUID.randomUUID();
+            paymentToProcess = Instancio.create(Payment.class);
+            paymentToProcess.setUserId(userId);
+            expectedDto = Instancio.create(PaymentView.class);
         }
 
         @Test
-        void createShouldReturnExistingSuccessPaymentIfItExists() {
-            Payment existingSuccessPayment = Instancio.create(Payment.class);
-            existingSuccessPayment.setPaymentStatus(PaymentStatus.SUCCESS);
+        void shouldThrowNotFoundIfOrderDoesNotExistInGrpc() {
+            given(paymentRepository.findByOrderId(createDto.orderId())).willReturn(Optional.empty());
+            given(orderGrpcClient.getOrderPriceById(createDto.orderId()))
+                    .willThrow(new ResourceNotFoundException("Order not found in order-service"));
 
-            given(paymentRepository.findFirstByOrderIdOrderByCreatedAtDesc(createDto.orderId()))
-                    .willReturn(Optional.of(existingSuccessPayment));
-            given(paymentMapper.paymentToPaymentResponseDto(existingSuccessPayment)).willReturn(expectedDto);
+            assertThatThrownBy(() -> paymentService.create(userId, createDto))
+                    .isInstanceOf(ResourceNotFoundException.class);
 
-            PaymentResponseDto result = paymentService.create(createDto);
-
-            assertThat(result).isNotNull().isEqualTo(expectedDto);
-
-            verifyNoInteractions(paymentGatewayClient, eventPublisher, transactionTemplate);
-            verify(paymentRepository, never()).save(any(Payment.class));
+            verifyNoInteractions(paymentMapper, paymentGatewayClient, transactionTemplate);
         }
 
         @Test
-        void createShouldProcessNewPaymentSuccessfullyWhenGatewayReturnsSuccess() {
+        void shouldThrowAccessDeniedIfGrpcOrderBelongsToSomeoneElse() {
+            given(paymentRepository.findByOrderId(createDto.orderId())).willReturn(Optional.empty());
+
+            OrderView orderDetails = new OrderView(createDto.orderId(), UUID.randomUUID(), BigDecimal.TEN);
+            given(orderGrpcClient.getOrderPriceById(createDto.orderId())).willReturn(orderDetails);
+
+            assertThatThrownBy(() -> paymentService.create(userId, createDto))
+                    .isInstanceOf(AccessDeniedException.class)
+                    .hasMessage("You do not have permission to pay for this order.");
+
+            verifyNoInteractions(paymentMapper, paymentGatewayClient, transactionTemplate);
+        }
+
+        @Test
+        void shouldReturnExistingSuccessIfAlreadyPaid() {
+            paymentToProcess.setPaymentStatus(PaymentStatus.SUCCESS);
+
+            given(paymentRepository.findByOrderId(createDto.orderId())).willReturn(Optional.of(paymentToProcess));
+            given(paymentMapper.toView(paymentToProcess)).willReturn(expectedDto);
+
+            PaymentView result = paymentService.create(userId, createDto);
+
+            assertThat(result).isEqualTo(expectedDto);
+            verifyNoInteractions(orderGrpcClient, paymentGatewayClient, transactionTemplate);
+        }
+
+        @Test
+        void shouldCreateNewPaymentAndProcessSuccessfully() {
+            paymentToProcess.setPaymentStatus(PaymentStatus.PENDING);
+
+            given(paymentRepository.findByOrderId(createDto.orderId())).willReturn(Optional.empty());
+
+            OrderView orderDetails = new OrderView(createDto.orderId(), userId, BigDecimal.TEN);
+            given(orderGrpcClient.getOrderPriceById(createDto.orderId())).willReturn(orderDetails);
+            given(paymentMapper.toNewPayment(orderDetails)).willReturn(paymentToProcess);
+            given(paymentRepository.save(paymentToProcess)).willReturn(paymentToProcess);
+            given(paymentGatewayClient.processPayment(paymentToProcess, createDto))
+                    .willReturn(PaymentStatus.SUCCESS);
             given(transactionTemplate.execute(any())).willAnswer(invocation -> {
-                TransactionCallback<PaymentResponseDto> callback = invocation.getArgument(0);
+                TransactionCallback<PaymentView> callback = invocation.getArgument(0);
+                return callback.doInTransaction(null);
+            });
+            given(paymentMapper.toView(paymentToProcess)).willReturn(expectedDto);
+
+            PaymentView result = paymentService.create(userId, createDto);
+
+            assertThat(result).isEqualTo(expectedDto);
+            assertThat(paymentToProcess.getPaymentStatus()).isEqualTo(PaymentStatus.SUCCESS);
+
+            verify(paymentRepository, org.mockito.Mockito.times(2)).save(paymentToProcess);
+            verify(eventPublisher).publishPayment(paymentToProcess);
+        }
+
+        @Test
+        void shouldThrowAccessDeniedIfExistingPaymentDoesNotBelongToUser() {
+            paymentToProcess.setUserId(UUID.randomUUID());
+
+            given(paymentRepository.findByOrderId(createDto.orderId())).willReturn(Optional.of(paymentToProcess));
+
+            assertThatThrownBy(() -> paymentService.create(userId, createDto))
+                    .isInstanceOf(AccessDeniedException.class);
+
+            verifyNoInteractions(orderGrpcClient, paymentGatewayClient);
+        }
+
+        @Test
+        void shouldProcessExistingPendingPaymentSuccessfully() {
+            paymentToProcess.setPaymentStatus(PaymentStatus.PENDING);
+
+            given(paymentRepository.findByOrderId(createDto.orderId())).willReturn(Optional.of(paymentToProcess));
+            given(paymentGatewayClient.processPayment(paymentToProcess, createDto))
+                    .willReturn(PaymentStatus.SUCCESS);
+
+            given(transactionTemplate.execute(any())).willAnswer(invocation -> {
+                TransactionCallback<PaymentView> callback = invocation.getArgument(0);
+                return callback.doInTransaction(null);
+            });
+            given(paymentMapper.toView(paymentToProcess)).willReturn(expectedDto);
+
+            PaymentView result = paymentService.create(userId, createDto);
+
+            assertThat(result).isEqualTo(expectedDto);
+            assertThat(paymentToProcess.getPaymentStatus()).isEqualTo(PaymentStatus.SUCCESS);
+
+            verifyNoInteractions(orderGrpcClient);
+            verify(paymentRepository).save(paymentToProcess);
+            verify(eventPublisher).publishPayment(paymentToProcess);
+        }
+
+        @Test
+        void shouldBubbleUpOptimisticLockingExceptionWhenConcurrentUpdateOccurs() {
+            paymentToProcess.setPaymentStatus(PaymentStatus.PENDING);
+
+            given(paymentRepository.findByOrderId(createDto.orderId())).willReturn(Optional.of(paymentToProcess));
+            given(paymentGatewayClient.processPayment(paymentToProcess, createDto))
+                    .willReturn(PaymentStatus.SUCCESS);
+
+            given(transactionTemplate.execute(any())).willAnswer(invocation -> {
+                TransactionCallback<PaymentView> callback = invocation.getArgument(0);
                 return callback.doInTransaction(null);
             });
 
-            given(paymentRepository.findFirstByOrderIdOrderByCreatedAtDesc(createDto.orderId()))
-                    .willReturn(Optional.empty());
-            given(paymentMapper.paymentCreateDtoToPayment(createDto)).willReturn(payment);
-            given(paymentRepository.save(payment)).willReturn(payment);
-            given(paymentGatewayClient.processPayment(payment)).willReturn(PaymentStatus.SUCCESS);
-            given(paymentMapper.paymentToPaymentResponseDto(payment)).willReturn(expectedDto);
+            given(paymentRepository.save(paymentToProcess))
+                    .willThrow(new OptimisticLockingFailureException("Concurrent update"));
 
-            PaymentResponseDto result = paymentService.create(createDto);
+            assertThatThrownBy(() -> paymentService.create(userId, createDto))
+                    .isInstanceOf(OptimisticLockingFailureException.class);
 
-            assertThat(result).isNotNull().isEqualTo(expectedDto);
-            assertThat(payment.getPaymentStatus()).isEqualTo(PaymentStatus.SUCCESS);
-
-            verify(paymentRepository, times(2)).save(payment);
-            verify(paymentGatewayClient).processPayment(payment);
-            verify(eventPublisher).publishPayment(payment);
+            verifyNoInteractions(eventPublisher);
         }
 
         @Test
-        void createShouldProcessNewPaymentWhenGatewayReturnsFailed() {
+        void shouldFailTransactionIfOutboxEventFails() {
+            paymentToProcess.setPaymentStatus(PaymentStatus.PENDING);
+
+            given(paymentRepository.findByOrderId(createDto.orderId())).willReturn(Optional.of(paymentToProcess));
+            given(paymentGatewayClient.processPayment(paymentToProcess, createDto))
+                    .willReturn(PaymentStatus.SUCCESS);
+
             given(transactionTemplate.execute(any())).willAnswer(invocation -> {
-                TransactionCallback<PaymentResponseDto> callback = invocation.getArgument(0);
+                TransactionCallback<PaymentView> callback = invocation.getArgument(0);
                 return callback.doInTransaction(null);
             });
 
-            given(paymentRepository.findFirstByOrderIdOrderByCreatedAtDesc(createDto.orderId()))
-                    .willReturn(Optional.empty());
-            given(paymentMapper.paymentCreateDtoToPayment(createDto)).willReturn(payment);
-            given(paymentRepository.save(payment)).willReturn(payment);
-            given(paymentGatewayClient.processPayment(payment)).willReturn(PaymentStatus.FAILED);
-            given(paymentMapper.paymentToPaymentResponseDto(payment)).willReturn(expectedDto);
+            given(paymentRepository.save(paymentToProcess)).willReturn(paymentToProcess);
 
-            PaymentResponseDto result = paymentService.create(createDto);
+            org.mockito.Mockito.doThrow(new DataAccessResourceFailureException("Mongo disk full"))
+                    .when(eventPublisher)
+                    .publishPayment(paymentToProcess);
 
-            assertThat(result).isNotNull().isEqualTo(expectedDto);
-            assertThat(payment.getPaymentStatus()).isEqualTo(PaymentStatus.FAILED);
-
-            verify(eventPublisher).publishPayment(payment);
-        }
-
-        @Test
-        void createShouldProcessNewPaymentWhenPreviousPaymentFailed() {
-            Payment existingFailedPayment = Instancio.create(Payment.class);
-            existingFailedPayment.setPaymentStatus(PaymentStatus.FAILED);
-
-            given(transactionTemplate.execute(any())).willAnswer(invocation -> {
-                TransactionCallback<PaymentResponseDto> callback = invocation.getArgument(0);
-                return callback.doInTransaction(null);
-            });
-
-            given(paymentRepository.findFirstByOrderIdOrderByCreatedAtDesc(createDto.orderId()))
-                    .willReturn(Optional.of(existingFailedPayment));
-            given(paymentMapper.paymentCreateDtoToPayment(createDto)).willReturn(payment);
-            given(paymentRepository.save(payment)).willReturn(payment);
-            given(paymentGatewayClient.processPayment(payment)).willReturn(PaymentStatus.SUCCESS);
-            given(paymentMapper.paymentToPaymentResponseDto(payment)).willReturn(expectedDto);
-
-            PaymentResponseDto result = paymentService.create(createDto);
-
-            assertThat(result).isNotNull().isEqualTo(expectedDto);
-            verify(paymentGatewayClient).processPayment(payment);
+            assertThatThrownBy(() -> paymentService.create(userId, createDto))
+                    .isInstanceOf(DataAccessResourceFailureException.class);
         }
     }
 
@@ -167,116 +238,60 @@ class PaymentServiceImplTest {
     class GetByOrderIdTest {
 
         @Test
-        void getByOrderIdShouldReturnListSortedDesc() {
+        void shouldReturnSinglePaymentDto() {
             UUID orderId = UUID.randomUUID();
-            boolean desc = true;
-            Sort sort = Sort.by(Sort.Direction.DESC, "createdAt");
+            Payment payment = Instancio.create(Payment.class);
+            PaymentView expectedDto = Instancio.create(PaymentView.class);
 
-            List<Payment> payments = Instancio.ofList(Payment.class).size(3).create();
-            List<PaymentResponseDto> expectedList = Instancio.ofList(PaymentResponseDto.class).size(3).create();
+            given(paymentRepository.findByOrderId(orderId)).willReturn(Optional.of(payment));
+            given(paymentMapper.toView(payment)).willReturn(expectedDto);
 
-            given(paymentRepository.findByOrderId(orderId, sort)).willReturn(payments);
-            for (int i = 0; i < payments.size(); i++) {
-                given(paymentMapper.paymentToPaymentResponseDto(payments.get(i))).willReturn(expectedList.get(i));
-            }
+            PaymentView result = paymentService.getByOrderId(orderId);
 
-            List<PaymentResponseDto> result = paymentService.getByOrderId(orderId, desc);
-
-            assertThat(result).isNotNull().hasSize(3).containsExactlyElementsOf(expectedList);
-            verify(paymentRepository).findByOrderId(orderId, sort);
+            assertThat(result).isNotNull().isEqualTo(expectedDto);
         }
 
         @Test
-        void getByOrderIdShouldReturnListSortedAsc() {
+        void shouldThrowExceptionWhenNotFound() {
             UUID orderId = UUID.randomUUID();
-            boolean desc = false;
-            Sort sort = Sort.by(Sort.Direction.ASC, "createdAt");
+            given(paymentRepository.findByOrderId(orderId)).willReturn(Optional.empty());
 
-            List<Payment> payments = Instancio.ofList(Payment.class).size(2).create();
-            List<PaymentResponseDto> expectedList = Instancio.ofList(PaymentResponseDto.class).size(2).create();
-
-            given(paymentRepository.findByOrderId(orderId, sort)).willReturn(payments);
-            for (int i = 0; i < payments.size(); i++) {
-                given(paymentMapper.paymentToPaymentResponseDto(payments.get(i))).willReturn(expectedList.get(i));
-            }
-
-            List<PaymentResponseDto> result = paymentService.getByOrderId(orderId, desc);
-
-            assertThat(result).isNotNull().hasSize(2).containsExactlyElementsOf(expectedList);
-            verify(paymentRepository).findByOrderId(orderId, sort);
-        }
-
-        @Test
-        void getByOrderIdShouldReturnEmptyListWhenNoPaymentsFound() {
-            UUID orderId = UUID.randomUUID();
-            Sort sort = Sort.by(Sort.Direction.DESC, "createdAt");
-
-            given(paymentRepository.findByOrderId(orderId, sort)).willReturn(List.of());
-
-            List<PaymentResponseDto> result = paymentService.getByOrderId(orderId, true);
-
-            assertThat(result).isNotNull().isEmpty();
-            verifyNoInteractions(paymentMapper);
+            assertThatThrownBy(() -> paymentService.getByOrderId(orderId))
+                    .isInstanceOf(ResourceNotFoundException.class);
         }
     }
 
     @Nested
     class GetByOrderIdAndUserIdTest {
-
         @Test
-        void getByOrderIdAndUserIdShouldThrowAccessDeniedExceptionWhenOrderBelongsToSomeoneElse() {
+        void shouldThrowAccessDeniedWhenOrderBelongsToSomeoneElse() {
             UUID orderId = UUID.randomUUID();
             UUID userId = UUID.randomUUID();
 
-            given(paymentRepository.existsByOrderIdAndUserIdNot(orderId, userId)).willReturn(true);
+            given(paymentRepository.existsByOrderIdAndUserIdNot(orderId, userId))
+                    .willReturn(true);
 
-            assertThatThrownBy(() -> paymentService.getByOrderIdAndUserId(orderId, userId, true))
-                    .isInstanceOf(AccessDeniedException.class)
-                    .hasMessage("You do not have permission to access payments for this order.");
+            assertThatThrownBy(() -> paymentService.getByOrderIdAndUserId(orderId, userId))
+                    .isInstanceOf(AccessDeniedException.class);
 
-            verify(paymentRepository, never()).findByOrderIdAndUserId(any(), any(), any());
-            verifyNoInteractions(paymentMapper);
+            verify(paymentRepository, never()).findByOrderIdAndUserId(any(), any());
         }
 
         @Test
-        void getByOrderIdAndUserIdShouldReturnListSortedDescWhenUserOwnsOrder() {
+        void shouldReturnSinglePaymentDtoWhenUserOwnsOrder() {
             UUID orderId = UUID.randomUUID();
             UUID userId = UUID.randomUUID();
-            boolean desc = true;
-            Sort sort = Sort.by(Sort.Direction.DESC, "createdAt");
+            Payment payment = Instancio.create(Payment.class);
+            PaymentView expectedDto = Instancio.create(PaymentView.class);
 
-            List<Payment> payments = Instancio.ofList(Payment.class).size(2).create();
-            List<PaymentResponseDto> expectedList = Instancio.ofList(PaymentResponseDto.class).size(2).create();
+            given(paymentRepository.existsByOrderIdAndUserIdNot(orderId, userId))
+                    .willReturn(false);
+            given(paymentRepository.findByOrderIdAndUserId(orderId, userId)).willReturn(Optional.of(payment));
+            given(paymentMapper.toView(payment)).willReturn(expectedDto);
 
-            given(paymentRepository.existsByOrderIdAndUserIdNot(orderId, userId)).willReturn(false);
-            given(paymentRepository.findByOrderIdAndUserId(orderId, userId, sort)).willReturn(payments);
-            for (int i = 0; i < payments.size(); i++) {
-                given(paymentMapper.paymentToPaymentResponseDto(payments.get(i))).willReturn(expectedList.get(i));
-            }
+            PaymentView result = paymentService.getByOrderIdAndUserId(orderId, userId);
 
-            List<PaymentResponseDto> result = paymentService.getByOrderIdAndUserId(orderId, userId, desc);
-
-            assertThat(result).isNotNull().hasSize(2).containsExactlyElementsOf(expectedList);
-            verify(paymentRepository).findByOrderIdAndUserId(orderId, userId, sort);
-        }
-
-        @Test
-        void getByOrderIdAndUserIdShouldReturnListSortedAscWhenUserOwnsOrder() {
-            UUID orderId = UUID.randomUUID();
-            UUID userId = UUID.randomUUID();
-            boolean desc = false;
-            Sort sort = Sort.by(Sort.Direction.ASC, "createdAt");
-
-            List<Payment> payments = Instancio.ofList(Payment.class).size(1).create();
-            List<PaymentResponseDto> expectedList = Instancio.ofList(PaymentResponseDto.class).size(1).create();
-
-            given(paymentRepository.existsByOrderIdAndUserIdNot(orderId, userId)).willReturn(false);
-            given(paymentRepository.findByOrderIdAndUserId(orderId, userId, sort)).willReturn(payments);
-            given(paymentMapper.paymentToPaymentResponseDto(payments.getFirst())).willReturn(expectedList.getFirst());
-
-            List<PaymentResponseDto> result = paymentService.getByOrderIdAndUserId(orderId, userId, desc);
-
-            assertThat(result).isNotNull().hasSize(1).containsExactlyElementsOf(expectedList);
+            assertThat(result).isNotNull().isEqualTo(expectedDto);
         }
     }
 
@@ -288,14 +303,15 @@ class PaymentServiceImplTest {
             UUID userId = UUID.randomUUID();
             Pageable pageable = PageRequest.of(0, 10);
             List<Payment> payments = Instancio.ofList(Payment.class).size(2).create();
-            List<PaymentResponseDto> expectedList = Instancio.ofList(PaymentResponseDto.class).size(2).create();
+            List<PaymentView> expectedList =
+                    Instancio.ofList(PaymentView.class).size(2).create();
             Page<Payment> paymentPage = new PageImpl<>(payments, pageable, payments.size());
 
             given(paymentRepository.findByUserId(userId, pageable)).willReturn(paymentPage);
-            given(paymentMapper.paymentToPaymentResponseDto(payments.get(0))).willReturn(expectedList.get(0));
-            given(paymentMapper.paymentToPaymentResponseDto(payments.get(1))).willReturn(expectedList.get(1));
+            given(paymentMapper.toView(payments.get(0))).willReturn(expectedList.get(0));
+            given(paymentMapper.toView(payments.get(1))).willReturn(expectedList.get(1));
 
-            Page<PaymentResponseDto> result = paymentService.getByUserId(userId, pageable);
+            Page<PaymentView> result = paymentService.getByUserId(userId, pageable);
 
             assertThat(result).isNotNull();
             assertThat(result.getTotalElements()).isEqualTo(2);
@@ -309,7 +325,7 @@ class PaymentServiceImplTest {
 
             given(paymentRepository.findByUserId(userId, pageable)).willReturn(Page.empty(pageable));
 
-            Page<PaymentResponseDto> result = paymentService.getByUserId(userId, pageable);
+            Page<PaymentView> result = paymentService.getByUserId(userId, pageable);
 
             assertThat(result).isNotNull().isEmpty();
             verifyNoInteractions(paymentMapper);
@@ -324,15 +340,16 @@ class PaymentServiceImplTest {
             PaymentStatus status = PaymentStatus.SUCCESS;
             Pageable pageable = PageRequest.of(0, 10);
             List<Payment> payments = Instancio.ofList(Payment.class).size(3).create();
-            List<PaymentResponseDto> expectedList = Instancio.ofList(PaymentResponseDto.class).size(3).create();
+            List<PaymentView> expectedList =
+                    Instancio.ofList(PaymentView.class).size(3).create();
             Page<Payment> paymentPage = new PageImpl<>(payments, pageable, payments.size());
 
             given(paymentRepository.findByPaymentStatus(status, pageable)).willReturn(paymentPage);
             for (int i = 0; i < payments.size(); i++) {
-                given(paymentMapper.paymentToPaymentResponseDto(payments.get(i))).willReturn(expectedList.get(i));
+                given(paymentMapper.toView(payments.get(i))).willReturn(expectedList.get(i));
             }
 
-            Page<PaymentResponseDto> result = paymentService.getByStatus(status, pageable);
+            Page<PaymentView> result = paymentService.getByStatus(status, pageable);
 
             assertThat(result).isNotNull();
             assertThat(result.getTotalElements()).isEqualTo(3);
@@ -346,7 +363,7 @@ class PaymentServiceImplTest {
 
             given(paymentRepository.findByPaymentStatus(status, pageable)).willReturn(Page.empty(pageable));
 
-            Page<PaymentResponseDto> result = paymentService.getByStatus(status, pageable);
+            Page<PaymentView> result = paymentService.getByStatus(status, pageable);
 
             assertThat(result).isNotNull().isEmpty();
             verifyNoInteractions(paymentMapper);
@@ -363,14 +380,16 @@ class PaymentServiceImplTest {
             Pageable pageable = PageRequest.of(0, 10);
 
             List<Payment> payments = Instancio.ofList(Payment.class).size(2).create();
-            List<PaymentResponseDto> expectedList = Instancio.ofList(PaymentResponseDto.class).size(2).create();
+            List<PaymentView> expectedList =
+                    Instancio.ofList(PaymentView.class).size(2).create();
             Page<Payment> paymentPage = new PageImpl<>(payments, pageable, payments.size());
 
-            given(paymentRepository.findByUserIdAndPaymentStatus(userId, status, pageable)).willReturn(paymentPage);
-            given(paymentMapper.paymentToPaymentResponseDto(payments.get(0))).willReturn(expectedList.get(0));
-            given(paymentMapper.paymentToPaymentResponseDto(payments.get(1))).willReturn(expectedList.get(1));
+            given(paymentRepository.findByUserIdAndPaymentStatus(userId, status, pageable))
+                    .willReturn(paymentPage);
+            given(paymentMapper.toView(payments.get(0))).willReturn(expectedList.get(0));
+            given(paymentMapper.toView(payments.get(1))).willReturn(expectedList.get(1));
 
-            Page<PaymentResponseDto> result = paymentService.getByUserIdAndStatus(userId, status, pageable);
+            Page<PaymentView> result = paymentService.getByUserIdAndStatus(userId, status, pageable);
 
             assertThat(result).isNotNull();
             assertThat(result.getTotalElements()).isEqualTo(2);
@@ -383,9 +402,10 @@ class PaymentServiceImplTest {
             PaymentStatus status = PaymentStatus.SUCCESS;
             Pageable pageable = PageRequest.of(0, 10);
 
-            given(paymentRepository.findByUserIdAndPaymentStatus(userId, status, pageable)).willReturn(Page.empty(pageable));
+            given(paymentRepository.findByUserIdAndPaymentStatus(userId, status, pageable))
+                    .willReturn(Page.empty(pageable));
 
-            Page<PaymentResponseDto> result = paymentService.getByUserIdAndStatus(userId, status, pageable);
+            Page<PaymentView> result = paymentService.getByUserIdAndStatus(userId, status, pageable);
 
             assertThat(result).isNotNull().isEmpty();
             verifyNoInteractions(paymentMapper);
@@ -398,30 +418,36 @@ class PaymentServiceImplTest {
         @Test
         void getTotalAmountByUserIdShouldReturnCalculatedAmountWhenPaymentsExist() {
             UUID userId = UUID.randomUUID();
-            PaymentFilterRequestDto request = Instancio.create(PaymentFilterRequestDto.class);
-            TotalAmountDto expectedAmount = new TotalAmountDto(new BigDecimal("150.50"));
+            PaymentSearchCriteria request = Instancio.of(PaymentSearchCriteria.class)
+                    .set(field(PaymentSearchCriteria::from), Instant.now().minus(30, ChronoUnit.DAYS))
+                    .set(field(PaymentSearchCriteria::to), Instant.now())
+                    .create();
+            PaymentTotalSum expectedAmount = new PaymentTotalSum(new BigDecimal("150.50"));
 
             given(paymentRepository.sumPaymentsByUserIdAndDateRange(userId, request))
                     .willReturn(Optional.of(expectedAmount));
 
-            TotalAmountDto result = paymentService.getTotalAmountByUserId(userId, request);
+            PaymentTotalSum result = paymentService.getTotalSumByUserId(userId, request);
 
             assertThat(result).isNotNull();
-            assertThat(result.totalAmount()).isEqualTo(new BigDecimal("150.50"));
+            assertThat(result.totalSum()).isEqualTo(new BigDecimal("150.50"));
         }
 
         @Test
         void getTotalAmountByUserIdShouldReturnZeroWhenNoPaymentsExist() {
             UUID userId = UUID.randomUUID();
-            PaymentFilterRequestDto request = Instancio.create(PaymentFilterRequestDto.class);
+            PaymentSearchCriteria request = Instancio.of(PaymentSearchCriteria.class)
+                    .set(field(PaymentSearchCriteria::from), Instant.now().minus(30, ChronoUnit.DAYS))
+                    .set(field(PaymentSearchCriteria::to), Instant.now())
+                    .create();
 
             given(paymentRepository.sumPaymentsByUserIdAndDateRange(userId, request))
                     .willReturn(Optional.empty());
 
-            TotalAmountDto result = paymentService.getTotalAmountByUserId(userId, request);
+            PaymentTotalSum result = paymentService.getTotalSumByUserId(userId, request);
 
             assertThat(result).isNotNull();
-            assertThat(result.totalAmount()).isEqualTo(BigDecimal.ZERO);
+            assertThat(result.totalSum()).isEqualTo(BigDecimal.ZERO);
         }
     }
 
@@ -430,29 +456,33 @@ class PaymentServiceImplTest {
 
         @Test
         void getTotalAmountShouldReturnCalculatedAmountWhenPaymentsExist() {
-            PaymentFilterRequestDto request = Instancio.create(PaymentFilterRequestDto.class);
-            TotalAmountDto expectedAmount = new TotalAmountDto(new BigDecimal("1000.00"));
+            PaymentSearchCriteria request = Instancio.of(PaymentSearchCriteria.class)
+                    .set(field(PaymentSearchCriteria::from), Instant.now().minus(30, ChronoUnit.DAYS))
+                    .set(field(PaymentSearchCriteria::to), Instant.now())
+                    .create();
+            PaymentTotalSum expectedAmount = new PaymentTotalSum(new BigDecimal("1000.00"));
 
-            given(paymentRepository.sumAllPaymentsByDateRange(request))
-                    .willReturn(Optional.of(expectedAmount));
+            given(paymentRepository.sumAllPaymentsByDateRange(request)).willReturn(Optional.of(expectedAmount));
 
-            TotalAmountDto result = paymentService.getTotalAmount(request);
+            PaymentTotalSum result = paymentService.getTotalSum(request);
 
             assertThat(result).isNotNull();
-            assertThat(result.totalAmount()).isEqualTo(new BigDecimal("1000.00"));
+            assertThat(result.totalSum()).isEqualTo(new BigDecimal("1000.00"));
         }
 
         @Test
         void getTotalAmountShouldReturnZeroWhenNoPaymentsExist() {
-            PaymentFilterRequestDto request = Instancio.create(PaymentFilterRequestDto.class);
+            PaymentSearchCriteria request = Instancio.of(PaymentSearchCriteria.class)
+                    .set(field(PaymentSearchCriteria::from), Instant.now().minus(30, ChronoUnit.DAYS))
+                    .set(field(PaymentSearchCriteria::to), Instant.now())
+                    .create();
 
-            given(paymentRepository.sumAllPaymentsByDateRange(request))
-                    .willReturn(Optional.empty());
+            given(paymentRepository.sumAllPaymentsByDateRange(request)).willReturn(Optional.empty());
 
-            TotalAmountDto result = paymentService.getTotalAmount(request);
+            PaymentTotalSum result = paymentService.getTotalSum(request);
 
             assertThat(result).isNotNull();
-            assertThat(result.totalAmount()).isEqualTo(BigDecimal.ZERO);
+            assertThat(result.totalSum()).isEqualTo(BigDecimal.ZERO);
         }
     }
 }

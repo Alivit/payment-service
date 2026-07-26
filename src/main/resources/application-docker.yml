@@ -1,22 +1,46 @@
 spring:
   mongodb:
-    uri: mongodb://${PAYMENT_DB_USERNAME}:${PAYMENT_DB_PASSWORD}@payment-mongodb:27017/${PAYMENT_DB_NAME}?replicaSet=rs0&uuidRepresentation=standard&authSource=${PAYMENT_DB_NAME}
-
+    uri: mongodb://${PAYMENT_DB_USERNAME}:${PAYMENT_DB_PASSWORD}@payment-mongodb:${MONGO_PORT}/${PAYMENT_DB_NAME}?replicaSet=rs0&authSource=${PAYMENT_DB_NAME}
+    representation:
+      uuid: standard
   kafka:
-    bootstrap-servers: kafka:29092
-
+    bootstrap-servers: payment-kafka:${KAFKA_PORT}
   security:
     oauth2:
+      client:
+        registration:
+          order-service-internal:
+            provider: keycloak
+            client-id: ${APP_CLIENT_ID}
+            client-authentication-method: none
+            authorization-grant-type: client_credentials
+        provider:
+          keycloak:
+            token-uri: https://keycloak:${KC_HTTPS_PORT}/realms/${APP_REALM}/protocol/openid-connect/token
       resourceserver:
         jwt:
-          jwk-set-uri: ${APP_JWK_SET_URI_DOCKER}
-          issuer-uri: ${APP_ISSUER_URI_DOCKER}
-          audience: account
-
+          jwk-set-uri: https://keycloak:${KC_HTTPS_PORT}/realms/${APP_REALM}/protocol/openid-connect/certs
+          issuer-uri: https://keycloak:${KC_HTTPS_PORT}/realms/${APP_REALM}
+          audience: ${APP_CLIENT_ID}
+  ssl:
+    bundle:
+      pem:
+        keycloak-mtls:
+          keystore:
+            certificate: "file:/app/certs/auth-client.crt"
+            private-key: "file:/app/certs/auth-client.key"
+          truststore:
+            certificate: "file:/app/certs/root-ca.crt"
+  grpc:
+    client:
+      channels:
+        order-service-grpc:
+          address: 'order-service:${ORDER_GRPC_SERVER_PORT}'
+          negotiation-type: plaintext
 app:
   liquibase:
-    uri: mongodb://${PAYMENT_DB_USERNAME}:${PAYMENT_DB_PASSWORD}@payment-mongodb:27017/${PAYMENT_DB_NAME}?replicaSet=rs0&uuidRepresentation=standard&authSource=${PAYMENT_DB_NAME}
-
+    uri: ${spring.mongodb.uri}
 logging:
   level:
     root: INFO
+    com.minispring.paymentservice: INFO
